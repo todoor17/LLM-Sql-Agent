@@ -24,7 +24,7 @@ def do_db_retrieve(received_text):
         raise e
 
 
-def do_db_insert(received_text):
+def do_db_query(received_text):
     try:
         with engine.connect() as connection:
             transaction = connection.begin()
@@ -37,3 +37,13 @@ def do_db_insert(received_text):
         raise e
 
 
+def do_db_insert(received_text):
+    do_db_query(received_text)
+
+
+def do_db_delete(received_text):
+    do_db_query(received_text)
+
+
+def do_db_update(received_text):
+    do_db_query(received_text)

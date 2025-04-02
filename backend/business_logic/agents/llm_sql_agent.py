@@ -1,13 +1,16 @@
+from queue import Queue
+
 from business_logic.models import llm_models
 from typing import Dict
 from typing_extensions import TypedDict
 from langgraph.constants import START, END
 from langgraph.graph import StateGraph
-from data.data import db_info
-from business_logic.models.llm_models import askMistral
+from data.db_data import db_info
+from business_logic.models.llm_models import askMistral, model
 from business_logic.voice.text_to_speech import text_to_speech
-from business_logic.database.db_connector import do_db_retrieve, do_db_insert
+from business_logic.database.db_connector import do_db_retrieve, do_db_insert, do_db_delete, do_db_update
 from data.prompt_templates import template_prompt, template_prompt_1, template_prompt_2, template_prompt_4, template_prompt_5
+from data.prompt_templates import template_check_correct_delete, template_check_correct_update, template_check_correct_delete, template_prompt_translate
 
 llm_model = llm_models.model
 
@@ -25,17 +28,47 @@ class State(TypedDict):
     missing_fields: str
     audio_response_path: str
 
+initial_state = {
+    "database_info": db_info,
+    "type": "",
+    "answer": "",
+    "status": "",
+    "correct": False,
+    "suggested_new_query": "",
+    "all_fields_present": True,
+    "missing_fields": "",
+    "prompt": "",
+    "sql_answer": "",
+    "insert_status": "",
+    "audio_response_path": "",
+}
+
+queue = Queue()
 
 def get_query(state: State):
-    if state["prompt"] == "":
-        state["prompt"] = input("Enter your prompt: \n")
-    elif state["prompt"] != "" and state["type"] == "ERROR":
-        state["prompt"] = input("You introduced an INCORRECT PROMPT. Please retry: \n")
-    elif state["prompt"] != "" and state["type"] != "ERROR" and state["missing_fields"] != "":
-        state["prompt"] = input(f"You must introduce {state["missing_fields"]} too. Retry: \n")
-    else:
-        pass
+    global queue
 
+    if not queue.empty():
+        state["prompt"] = queue.get()
+        print(state["prompt"])
+    else:
+        if state["status"] == "UNRELATED DELETE":
+            state["prompt"] = input(f"You introduced a DELETE PROMPT that is not related to the database.\nPlease retry: ")
+        elif state["prompt"] == "" or state["status"] == "START":
+            state["prompt"] = input("Enter your prompt: \n")
+        elif state["prompt"] != "" and state["type"] == "ERROR":
+            state["prompt"] = input("You introduced an INCORRECT PROMPT. Please retry: \n")
+        elif state["prompt"] != "" and state["type"] != "ERROR" and state["missing_fields"] != "":
+            state["prompt"] = input(f"{state['missing_fields']}. Retry: \n")
+
+
+    translate_prompt = template_prompt_translate.format(initial_prompt=state["prompt"], db_info=db_info)
+    new_prompt = askMistral(translate_prompt)
+    print(new_prompt)
+
+    state["prompt"] = new_prompt
+
+    state["status"] = ""
     state["all_fields_present"] = True
     state["missing_fields"] = ""
     return state
@@ -50,6 +83,10 @@ def check_query_type(state: State):
         state["type"] = "INSERT"
     elif "RETRIEVE" in llm_response:
         state["type"] = "RETRIEVE"
+    elif "DELETE" in llm_response:
+        state["type"] = "DELETE"
+    elif "UPDATE" in llm_response:
+        state["type"] = "UPDATE"
     else:
         state["type"] = "ERROR"
 
@@ -63,6 +100,12 @@ def do_type_route(state: State):
     elif state["type"] == "INSERT":
         print("goes to insert\n")
         return "INSERT"
+    elif state["type"] == "DELETE":
+        print("goes to delete\n")
+        return "DELETE"
+    elif state["type"] == "UPDATE":
+        print("goes to update\n")
+        return "UPDATE"
     elif state["type"] == "ERROR":
         print("ERROR. GRAPH ENDS HERE")
         return "ERROR"
@@ -87,14 +130,14 @@ def do_retrieve(state: State):
 
 def do_retrieve_route(state: State):
     if state["status"] == "SUCCESS":
-        print("goes to check_correctness")
+        print("goes to check_correct_retrieve")
         return "SUCCESS"
     elif state["status"] == "ERROR":
         return "ERROR"
 
 
-def check_correctness(state: State):
-    print("entered check_correctness")
+def check_correct_retrieve(state: State):
+    print("entered check retrieve query correctness")
     check_prompt = template_prompt_2.format(initial_prompt = state["prompt"], answer=state["answer"], db_info=db_info)
     check_response = askMistral(check_prompt)
     print(check_response)
@@ -109,7 +152,7 @@ def check_correctness(state: State):
     return state
 
 
-def check_correctness_route(state: State):
+def check_retrieve_correctness_route(state: State):
     if state["correct"]:
         print("the program goes in print_result state\n")
         return "CORRECT"
@@ -119,7 +162,7 @@ def check_correctness_route(state: State):
 
 
 def check_for_all_fields(state: State):
-    print("entered check_for_all_fields")
+    print("\nentered check_for_all_fields")
     check_prompt = template_prompt_4.format(initial_prompt=state["prompt"], db_info=db_info)
     check_response = askMistral(check_prompt).lower()
     print(check_response)
@@ -145,36 +188,145 @@ def do_insert(state: State):
 
     try:
         do_db_insert(insert_response)
-        state["insert_status"] = "SUCCESS"
+        state["status"] = "SUCCESS"
         return state
     except Exception as e:
-        state["insert_status"] = "ERROR"
+        state["status"] = "ERROR"
         return state
 
 
 def do_insert_route(state: State):
-    return state["insert_status"]
+    return state["status"]
+
+
+def check_correct_delete(state: State):
+    print("entered check correct delete")
+    response = askMistral(template_check_correct_delete.format(initial_prompt=state["prompt"], db_info = db_info)).lower()
+    new_response = response
+
+    #formatting the response if it contains markdowns
+    if response.startswith("```"):
+        response = response.split("\n")
+        response = response[1:-1]
+        new_response = "\n".join(unit for unit in response)
+
+    if "no" in response:
+        state["status"] = "UNRELATED DELETE"
+    else:
+        state["status"] = "SUCCESS"
+        state["answer"] = new_response
+
+    return state
+
+
+def check_correct_delete_route(state: State):
+    print("Entered check_correct_delete_route")
+    return state["status"]
+
+
+def do_delete(state: State):
+    print("entered deleting part")
+    print(state["answer"])
+    try:
+        do_db_delete(state["answer"])
+        state["status"] = "SUCCESS"
+        return state
+    except Exception as e:
+        state["status"] = "WRONG DELETE QUERY"
+        return state
+    pass
+
+
+def do_delete_route(state: State):
+    print("Entered do_delete_route")
+    return state["status"]
+
+
+def check_correct_update(state: State):
+    print("entered check correct update")
+    prompt = template_check_correct_update.format(initial_prompt=state["prompt"], db_info=db_info)
+    response = askMistral(prompt).lower()
+    new_response = response
+
+    if response.startswith("```"):
+        new_response = response.split("\n")[1:-1]
+
+
+    if "no" in response:
+        state["status"] = "UNRELATED UPDATE"
+    else:
+        state["status"] = "SUCCESS"
+        state["answer"] = new_response
+
+    print(new_response)
+    return state
+
+
+def check_correct_update_route(state: State):
+    return state["status"]
+
+def do_update(state: State):
+    print("entered updating part")
+    print(state["answer"])
+    try:
+        do_db_update(state["answer"])
+        state["status"] = "SUCCESS"
+        return state
+    except Exception as e:
+        state["status"] = "WRONG UPDATE QUERY"
+        return state
+
+
+def do_update_route(state: State):
+    return state["status"]
 
 
 def print_result(state: State):
     if state["type"] == "RETRIEVE":
         message = f"You retrieval was successful. Here is the data for the prompt: {state['prompt']}:"
-        text_to_speech(message, state["audio_response_path"])
         print(message)
         print(state["sql_answer"])
-    else:
+    elif state["type"] == "INSERT":
         print("The insert operation was successful.")
+        state["sql_answer"] = f"Prompt: {state["prompt"]}.\nResult: The insert operation was successful."
+    elif state["type"] == "DELETE":
+        print(f"The delete operation was successful. ({state["prompt"]})")
+        state["sql_answer"] = f"Prompt: {state["prompt"]}.\nResult: The delete operation was successful."
+    elif state["type"] == "UPDATE":
+        state["sql_answer"] = f"Prompt: {state["prompt"]}.\nResult: The update operation was successful."
+
+    choice = input("\nEnter 0 to exit the program\nEnter 1 to introduce another prompt\n\n")
+
+    if choice == "0":
+        state["status"] = "end"
+    else:
+        state.update({
+            "prompt": "",
+            "type": "",
+            "answer": "",
+            "status": "restart",
+            "sql_answer": "",
+            "missing_fields": ""
+        })
 
     return state
 
+
+def print_result_route(state: State):
+    print("\nEntered print_result_route\n")
+    return state["status"]
 
 builder = StateGraph(State)
 builder.add_node("get_query", get_query)
 builder.add_node("check_query_type", check_query_type)
 builder.add_node("do_retrieve", do_retrieve)
 builder.add_node("check_for_all_fields", check_for_all_fields)
-builder.add_node("check_correctness", check_correctness)
+builder.add_node("check_correct_retrieve", check_correct_retrieve)
 builder.add_node("do_insert", do_insert)
+builder.add_node("do_delete", do_delete)
+builder.add_node("check_correct_delete", check_correct_delete)
+builder.add_node("do_update", do_update)
+builder.add_node("check_correct_update", check_correct_update)
 builder.add_node("print_result", print_result)
 
 builder.add_edge(START, "get_query")
@@ -184,6 +336,8 @@ builder.add_edge("get_query", "check_query_type")
 builder.add_conditional_edges("check_query_type", do_type_route, {
     "RETRIEVE": "do_retrieve",
     "INSERT": "check_for_all_fields",
+    "DELETE": "check_correct_delete",
+    "UPDATE": "check_correct_update",
     "ERROR": "get_query"
 })
 
@@ -199,16 +353,46 @@ builder.add_conditional_edges("do_insert", do_insert_route, {
 
 builder.add_conditional_edges("do_retrieve", do_retrieve_route, {
     "ERROR": "do_retrieve",
-    "SUCCESS": "check_correctness"
+    "SUCCESS": "check_correct_retrieve"
 })
 
-builder.add_conditional_edges("check_correctness", check_correctness_route, {
+builder.add_conditional_edges("check_correct_retrieve", check_retrieve_correctness_route, {
     "CORRECT": "print_result",
     "INCORRECT": "do_retrieve"
 })
+
+builder.add_conditional_edges("check_correct_delete", check_correct_delete_route, {
+    "UNRELATED DELETE": "get_query",
+    "SUCCESS": "do_delete"
+})
+
+builder.add_conditional_edges("do_delete", do_delete_route, {
+    "SUCCESS": "print_result",
+    "WRONG DELETE QUERY": "check_correct_delete",
+})
+
+builder.add_conditional_edges("check_correct_update", check_correct_update_route, {
+    "UNRELATED UPDATE": "check_correct_update",
+    "SUCCESS": "do_update"
+})
+
+builder.add_conditional_edges("do_update", do_update_route, {
+    "SUCCESS": "print_result",
+    "WRONG UPDATE QUERY": "check_correct_update",
+})
+
+builder.add_edge("do_update", "print_result")
+
+# builder.add_conditional_edges("print_result", print_result_route, {
+#     "restart": "get_query",
+#     "end": END
+# })
 
 builder.add_edge("print_result", END)
 
 graph = builder.compile()
 
-#graph.get_graph().draw_mermaid_png(output_file_path="diagram.png")
+graph.get_graph().draw_mermaid_png(output_file_path="diagram.png")
+
+# queue.put("Add the user Adrian Mazilu, 20, registered on 17th of november 2000")
+# graph.invoke(initial_state, {"recursion_limit": 100})

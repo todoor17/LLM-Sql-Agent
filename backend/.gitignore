@@ -1,0 +1,47 @@
+# Python and development files
+__pycache__/
+*.py[cod]
+*.swp
+*.bak
+*.orig
+*.pyc
+*.pyd
+*.pyo
+*.egg-info/
+*.egg
+.pytest_cache/
+.mypy_cache/
+.ipynb_checkpoints/
+
+# Virtual environment
+.venv/
+venv/
+env/
+ENV/
+
+# IDE specific files
+.vscode/
+.idea/
+*.iml
+
+# Build and distribution files
+build/
+dist/
+*.dist-info/
+*.tar.gz
+
+# Logs and databases
+*.log
+*.sqlite
+*.db
+
+# Project specific ignores
+/data/audio/*.wav  # Keep directory but ignore audio files
+/static/*
+!/static/.gitkeep  # Keep empty .gitkeep to maintain directory structure
+/templates/*
+!/templates/.gitkeep
+
+# System files
+.DS_Store
+Thumbs.db

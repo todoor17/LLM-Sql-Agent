@@ -21,7 +21,7 @@ db_info = {
     "orders": (
         "order_id (INTEGER, PRIMARY KEY) - Unique identifier for each order\n"
         "user_id (INTEGER, FOREIGN KEY references users.user_id) - The ID of the user who placed the order\n"
-        "date (DATE) - The date when the order was placed. It covers JUST the year 2025. From 1st of January to 31th of December.\n"
+        "date (DATE) - The date when the order was placed.\n"
     ),
     "orders_content": (
         "orders_content_id (INTEGER, PRIMARY KEY) - Distinct ID for each product-order relationship\n"
