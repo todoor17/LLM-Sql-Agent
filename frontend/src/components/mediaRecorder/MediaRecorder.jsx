@@ -28,7 +28,7 @@ export default function MediaRecorder() {
         body: formData,
       });
       const data = await uploadReponse.json();
-      print(data.text);
+      console.log(data.answer);
     } catch (error) {
       console.error(error);
     }
