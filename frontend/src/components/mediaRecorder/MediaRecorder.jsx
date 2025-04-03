@@ -3,11 +3,13 @@ import RoundButton from "../roundButton/RoundButton.jsx";
 import { useReactMediaRecorder } from "react-media-recorder";
 import micIcon from "../../assets/images/micIcon.png";
 import stopIcon from "../../assets/images/stopIcon.png";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 export default function MediaRecorder() {
   const { status, startRecording, stopRecording, mediaBlobUrl } =
     useReactMediaRecorder({ audio: true });
+
+  const audioRef = useRef(null);
 
   useEffect(() => {
     if (mediaBlobUrl) {
@@ -27,8 +29,17 @@ export default function MediaRecorder() {
         method: "POST",
         body: formData,
       });
-      const data = await uploadReponse.json();
-      console.log(data.answer);
+
+      // const uploadResponse = await fetch(
+      //   "http://localhost:5000/get_audio?prompt=which%20is%20the%20most%20sold%20product"
+      // );
+      const data = await uploadResponse.json();
+      console.log(data.path);
+
+      setTimeout(() => {
+        audioRef.current.src = "/public/audio/response.wav";
+        audioRef.current.play();
+      }, 1000);
     } catch (error) {
       console.error(error);
     }
@@ -36,7 +47,6 @@ export default function MediaRecorder() {
 
   return (
     <div>
-      <p>{status}</p>
       <RoundButton
         src={status === "idle" || status === "stopped" ? micIcon : stopIcon}
         onClick={
@@ -45,6 +55,7 @@ export default function MediaRecorder() {
             : stopRecording
         }
       />
+      <audio ref={audioRef} hidden></audio>
     </div>
   );
 }
