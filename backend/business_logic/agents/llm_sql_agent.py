@@ -7,10 +7,9 @@ from langgraph.constants import START, END
 from langgraph.graph import StateGraph
 from data.db_data import db_info
 from business_logic.models.llm_models import askMistral, model
-from business_logic.voice.text_to_speech import text_to_speech
 from business_logic.database.db_connector import do_db_retrieve, do_db_insert, do_db_delete, do_db_update
 from data.prompt_templates import template_prompt, template_prompt_1, template_prompt_2, template_prompt_4, template_prompt_5
-from data.prompt_templates import template_check_correct_delete, template_check_correct_update, template_check_correct_delete, template_prompt_translate
+from data.prompt_templates import template_check_correct_update, template_check_correct_delete, template_prompt_translate
 
 llm_model = llm_models.model
 
@@ -26,7 +25,7 @@ class State(TypedDict):
     insert_status: str
     all_fields_present: bool
     missing_fields: str
-    audio_response_path: str
+    success_answer: str
 
 initial_state = {
     "database_info": db_info,
@@ -38,9 +37,9 @@ initial_state = {
     "all_fields_present": True,
     "missing_fields": "",
     "prompt": "",
+    "success_answer": "",
     "sql_answer": "",
     "insert_status": "",
-    "audio_response_path": "",
 }
 
 queue = Queue()
@@ -280,34 +279,34 @@ def do_update(state: State):
 def do_update_route(state: State):
     return state["status"]
 
-
 def print_result(state: State):
     if state["type"] == "RETRIEVE":
-        message = f"You retrieval was successful. Here is the data for the prompt: {state['prompt']}:"
-        print(message)
+        state["success_answer"] = f"You retrieval was successful."
         print(state["sql_answer"])
     elif state["type"] == "INSERT":
         print("The insert operation was successful.")
-        state["sql_answer"] = f"Prompt: {state["prompt"]}.\nResult: The insert operation was successful."
+        state["success_answer"] = f"Prompt: {state["prompt"]}.\nResult: The insert operation was successful."
     elif state["type"] == "DELETE":
         print(f"The delete operation was successful. ({state["prompt"]})")
-        state["sql_answer"] = f"Prompt: {state["prompt"]}.\nResult: The delete operation was successful."
+        state["success_answer"] = f"Prompt: {state["prompt"]}.\nResult: The delete operation was successful."
     elif state["type"] == "UPDATE":
-        state["sql_answer"] = f"Prompt: {state["prompt"]}.\nResult: The update operation was successful."
+        state["success_answer"] = f"Prompt: {state["prompt"]}.\nResult: The update operation was successful."
 
-    choice = input("\nEnter 0 to exit the program\nEnter 1 to introduce another prompt\n\n")
-
-    if choice == "0":
-        state["status"] = "end"
-    else:
-        state.update({
-            "prompt": "",
-            "type": "",
-            "answer": "",
-            "status": "restart",
-            "sql_answer": "",
-            "missing_fields": ""
-        })
+    # choice is used when user runs llm_sql_agent with text, not with voice (from frontend)
+    # choice = input("\nEnter 0 to exit the program\nEnter 1 to introduce another prompt\n\n")
+    # choice = 0
+    #
+    # if choice == "0":
+    #     state["status"] = "end"
+    # else:
+    #     state.update({
+    #         "prompt": "",
+    #         "type": "",
+    #         "answer": "",
+    #         "status": "restart",
+    #         "sql_answer": "",
+    #         "missing_fields": ""
+    #     })
 
     return state
 
@@ -392,7 +391,6 @@ builder.add_edge("print_result", END)
 
 graph = builder.compile()
 
-graph.get_graph().draw_mermaid_png(output_file_path="diagram.png")
+# graph.get_graph().draw_mermaid_png(output_file_path="diagram.png")
 
-# queue.put("Add the user Adrian Mazilu, 20, registered on 17th of november 2000")
 # graph.invoke(initial_state, {"recursion_limit": 100})

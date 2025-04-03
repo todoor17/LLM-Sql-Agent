@@ -1,5 +1,4 @@
 import os
-import time
 from gtts import gTTS
 
 
@@ -9,14 +8,11 @@ def clear_dir(dir_path):
         os.remove(item_path)
 
 
-def text_to_speech(text, state):
-    clear_dir(r"D:\PythonProjects\SQL_Agent\backend\data\audio")
-    hms = time.ctime().split(" ")[3].split(":")
-    filename = f"result{hms[0]}{hms[1]}{hms[2]}.mp3"
+def text_to_speech(text):
+    clear_dir("D:/PythonProjects/SQL_Agent/frontend/public/audio")
 
     tts = gTTS(text=text, lang='en')
-
-    path = f"D:/PythonProjects/SQL_Agent/backend/data/audio/{filename}"
+    path = "D:/PythonProjects/SQL_Agent/frontend/public/audio/response.wav"
     tts.save(path)
-    state = path
-    return filename
+
+    return path
