@@ -1,6 +1,6 @@
 # SQL Agent with Open-Source LLMs
 
-![Workflow Diagram](https://github.com/user-attachments/assets/73f2f651-c93f-48c3-970a-686b574f1103)
+![image](https://github.com/user-attachments/assets/85719010-a296-432d-affb-c05477049411)
 
 ## Overview
 
