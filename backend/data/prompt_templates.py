@@ -1,19 +1,60 @@
 template_prompt = """
-This is the user's prompt: '{initial_prompt}'. It can be in various languages. If it is in a language other than English, translate it into English.
-This is the database structure: {db_info}
+Analyze the following user prompt and database structure to determine the appropriate operation type:
 
-First, double-check if the prompt is related to database operations. Analyze the prompt and strictly respond with one of the following based on its contents:
+USER PROMPT: '{initial_prompt}'
+DATABASE STRUCTURE: {db_info}
+LAST AI RESPONSE: {last_ai_response}
 
-- *ERROR* if the prompt is not database-related or tables do not exist in the database structure.
-- *INSERT* if the prompt contains any of: insert, add, create, new, register, introduce, enter, store, save, append, put, establish, initialize, generate, make, load, populate, enroll, submit, post
-- *RETRIEVE* if the prompt contains any of: get, find, show, list, return, select, fetch, query, search, lookup, extract, obtain, view, display, print, read, check, verify, examine, scan
-- *DELETE* if the prompt contains any of: delete, remove, get rid of, erase, wipe, clear, cut, eliminate, etc., **but only if the target table(s) exist(s) in the database structure**.
-- *UPDATE* if the prompt contains any of: update, change, modify, edit, revise, adjust, alter, transform, replace, enhance, refactor and so on.
-Respond with exactly one of: *INSERT*, *RETRIEVE*, *DELETE*, *ERROR* and no other word. The output will strictly be one of these 4 options.
+INSTRUCTIONS:
+1. Context Analysis:
+   - First check if this is a follow-up to the last AI response
+   - Then determine if the prompt is a general knowledge question or conversation
+   - If not conversation and not in English, translate it to English
+   - Perform all subsequent analysis on the processed version
 
-Note: If the target table does not exist in the database, return *ERROR* instead of *DELETE*.
+2. Operation Classification:
+   Strictly respond with ONLY ONE of the following:
+
+   *CONVERSATION* if:
+   - The prompt is a direct follow-up to {last_ai_response}
+   - It's a general knowledge question (math, facts, etc.)
+   - It's conversational (greetings, opinions, etc.)
+   - No database tables are referenced
+   - It references previous non-DB context
+   (Examples: "What's 3+3?", "Hello", "How are you?", "About what you just said...")
+
+   *INSERT*/*RETRIEVE*/*UPDATE*/*DELETE* only if:
+   - The prompt explicitly references NEW database operations
+   - Required tables exist in {db_info}
+   - Not building on previous non-DB conversation
+   (Follow original keyword rules for these)
+
+   *ERROR* only if:
+   - Prompt attempts database operations but tables don't exist
+   - Contains harmful/unsupported requests
+
+3. Special Cases:
+   - Follow-ups to non-DB responses → *CONVERSATION*
+   - Math operations without DB context → *CONVERSATION* 
+   - References to previous answers → *CONVERSATION*
+   - Mixed prompts (DB + general) → Prefer *CONVERSATION*
+
+4. Output Rules:
+   - ONLY respond with the tag, no explanations
+   - Valid tags: *INSERT*, *RETRIEVE*, *UPDATE*, *DELETE*, *CONVERSATION*, *ERROR*
+
+Examples:
+Last AI: "3+3 equals 6"
+Input: "Now divide by 2" → *CONVERSATION*
+
+Last AI: "Users table contains 5 records" 
+Input: "Show me those users" → *RETRIEVE*
+
+Last AI: "Hello there!"
+Input: "How are you?" → *CONVERSATION*
+
+Input: "Delete customers" → *DELETE* (if table exists) or *ERROR*
 """
-
 
 template_prompt_1 = """
 # PostgreSQL Query Generation Prompt
@@ -230,4 +271,58 @@ Translate this prompt to technical English following these rules:
 4. Keep all names/values exactly as provided
 """
 
+template_prompt_chat = """
+# CONTEXT
+You are QueryMate, an AI assistant that helps with both general conversations and database queries. 
+Database schema available: {db_info}
 
+# CONVERSATION HISTORY
+Human messages: {human_messages}
+AI messages (LLM's previous responses): {ai_messages}
+
+# CURRENT MESSAGE
+Human: {current_message}
+
+# INSTRUCTIONS
+1. Response Style:
+   - Be concise (1-3 sentences)
+   - Use natural, friendly language
+   - Maintain consistent personality
+   - If referencing DB schema, keep it brief
+
+2. Special Cases:
+   - For math/questions: Show working steps ("3+3=6")
+   - For greetings: Respond warmly but briefly
+   - For unclear messages: Ask for clarification
+   - For DB-related questions: Acknowledge you can help with that
+
+3. Rules:
+   - NEVER include tags like *CONVERSATION*
+   - DON'T mention you're an AI unless asked
+   - DON'T list options unless requested
+   - ALWAYS respond in complete sentences
+
+4. Output Format:
+   Just your response text, nothing else.
+
+# EXAMPLES
+Human: "Hi there!" 
+AI: "Hello! How can I help you today?"
+
+Human: "What's 3+3?"
+AI: "3 plus 3 equals 6."
+
+Human: "Can you show me users?"
+AI: "I can retrieve user data for you. Would you like me to do that?"
+
+# YOUR RESPONSE:
+"""
+
+template_prompt_natural_language_response = """
+This is user's prompt: {prompt}
+This is our database's structure: {db_info}. Use it for context.
+This is the SQL answer generated for the prompt: {sql_answer}.
+This is the value returned by the SQL query: {sql_answer_value}.
+
+I want you to generate some natural language response based on the user's prompt and the values returned by the SQL query, using database info and SQL answer for context.
+"""

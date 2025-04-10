@@ -1,7 +1,7 @@
 from queue import Queue
 
 from business_logic.models import llm_models
-from typing import Dict
+from typing import Dict, List
 from typing_extensions import TypedDict
 from langgraph.constants import START, END
 from langgraph.graph import StateGraph
@@ -9,7 +9,7 @@ from data.db_data import db_info
 from business_logic.models.llm_models import askMistral, model
 from business_logic.database.db_connector import do_db_retrieve, do_db_insert, do_db_delete, do_db_update
 from data.prompt_templates import template_prompt, template_prompt_1, template_prompt_2, template_prompt_4, template_prompt_5
-from data.prompt_templates import template_check_correct_update, template_check_correct_delete, template_prompt_translate
+from data.prompt_templates import template_check_correct_update, template_check_correct_delete, template_prompt_chat, template_prompt_natural_language_response
 
 llm_model = llm_models.model
 
@@ -26,21 +26,9 @@ class State(TypedDict):
     all_fields_present: bool
     missing_fields: str
     success_answer: str
-
-initial_state = {
-    "database_info": db_info,
-    "type": "",
-    "answer": "",
-    "status": "",
-    "correct": False,
-    "suggested_new_query": "",
-    "all_fields_present": True,
-    "missing_fields": "",
-    "prompt": "",
-    "success_answer": "",
-    "sql_answer": "",
-    "insert_status": "",
-}
+    conversation_flag: bool
+    user_messages: List[str]
+    ai_messages: List[str]
 
 queue = Queue()
 
@@ -59,24 +47,28 @@ def get_query(state: State):
             state["prompt"] = input("You introduced an INCORRECT PROMPT. Please retry: \n")
         elif state["prompt"] != "" and state["type"] != "ERROR" and state["missing_fields"] != "":
             state["prompt"] = input(f"{state['missing_fields']}. Retry: \n")
+        elif state["conversation_flag"]:
+            state["prompt"] = input("\nEnter your prompt / message: \n")
 
 
-    translate_prompt = template_prompt_translate.format(initial_prompt=state["prompt"], db_info=db_info)
-    new_prompt = askMistral(translate_prompt)
-    print(new_prompt)
-
-    state["prompt"] = new_prompt
+    # translate_prompt = template_prompt_translate.format(initial_prompt=state["prompt"], db_info=db_info)
+    # new_prompt = askMistral(translate_prompt)
+    # print(new_prompt)
+    #
+    # state["prompt"] = new_prompt
 
     state["status"] = ""
     state["all_fields_present"] = True
     state["missing_fields"] = ""
+    state["conversation_flag"] = False
+
     return state
 
 
 def check_query_type(state: State):
-    prompt = template_prompt.format(initial_prompt=state['prompt'], db_info=db_info)
+    prompt = template_prompt.format(initial_prompt=state['prompt'], db_info=db_info, last_ai_response=state['ai_messages'][:-1])
     llm_response = askMistral(prompt).upper()
-    print(llm_response)
+    # print(llm_response)
 
     if "INSERT" in llm_response:
         state["type"] = "INSERT"
@@ -86,6 +78,8 @@ def check_query_type(state: State):
         state["type"] = "DELETE"
     elif "UPDATE" in llm_response:
         state["type"] = "UPDATE"
+    elif "CONVERSATION" in llm_response:
+        state["type"] = "CONVERSATION"
     else:
         state["type"] = "ERROR"
 
@@ -105,6 +99,9 @@ def do_type_route(state: State):
     elif state["type"] == "UPDATE":
         print("goes to update\n")
         return "UPDATE"
+    elif state["type"] == "CONVERSATION":
+        # print("goes to conversation\n")
+        return "CONVERSATION"
     elif state["type"] == "ERROR":
         print("ERROR. GRAPH ENDS HERE")
         return "ERROR"
@@ -250,7 +247,6 @@ def check_correct_update(state: State):
     if response.startswith("```"):
         new_response = response.split("\n")[1:-1]
 
-
     if "no" in response:
         state["status"] = "UNRELATED UPDATE"
     else:
@@ -280,17 +276,10 @@ def do_update_route(state: State):
     return state["status"]
 
 def print_result(state: State):
-    if state["type"] == "RETRIEVE":
-        state["success_answer"] = f"You retrieval was successful."
-        print(state["sql_answer"])
-    elif state["type"] == "INSERT":
-        print("The insert operation was successful.")
-        state["success_answer"] = f"Prompt: {state["prompt"]}.\nResult: The insert operation was successful."
-    elif state["type"] == "DELETE":
-        print(f"The delete operation was successful. ({state["prompt"]})")
-        state["success_answer"] = f"Prompt: {state["prompt"]}.\nResult: The delete operation was successful."
-    elif state["type"] == "UPDATE":
-        state["success_answer"] = f"Prompt: {state["prompt"]}.\nResult: The update operation was successful."
+    print_prompt = template_prompt_natural_language_response.format(prompt=state["prompt"], db_info=db_info, sql_answer=state["answer"], sql_answer_value=state["sql_answer"])
+    result = askMistral(print_prompt)
+
+    print(result)
 
     # choice is used when user runs llm_sql_agent with text, not with voice (from frontend)
     # choice = input("\nEnter 0 to exit the program\nEnter 1 to introduce another prompt\n\n")
@@ -310,6 +299,25 @@ def print_result(state: State):
 
     return state
 
+def conversation(state: State):
+    # print("entered conversation")
+
+    current_message = state["prompt"]
+
+    human_messages = "\n".join(f"HUMAN MESSAGE[{index}]: " + message for index, message in enumerate(state["user_messages"][:3]))
+    ai_messages = "\n".join(f"AI RESPONSE[{index}]: " + message for index, message in enumerate(state["ai_messages"][:3]))
+
+    chat_prompt = template_prompt_chat.format(current_message=current_message, human_messages=human_messages, db_info=db_info, ai_messages=ai_messages)
+    response = askMistral(chat_prompt)
+
+    state["user_messages"].append(current_message)
+    state["ai_messages"].append(response)
+
+    print(response)
+
+    state["conversation_flag"] = True
+    return state
+
 
 def print_result_route(state: State):
     print("\nEntered print_result_route\n")
@@ -327,6 +335,7 @@ builder.add_node("check_correct_delete", check_correct_delete)
 builder.add_node("do_update", do_update)
 builder.add_node("check_correct_update", check_correct_update)
 builder.add_node("print_result", print_result)
+builder.add_node("conversation", conversation)
 
 builder.add_edge(START, "get_query")
 
@@ -337,8 +346,11 @@ builder.add_conditional_edges("check_query_type", do_type_route, {
     "INSERT": "check_for_all_fields",
     "DELETE": "check_correct_delete",
     "UPDATE": "check_correct_update",
+    "CONVERSATION": "conversation",
     "ERROR": "get_query"
 })
+
+builder.add_edge("conversation", "get_query")
 
 builder.add_conditional_edges("check_for_all_fields", check_for_all_fields_route, {
     "True": "do_insert",
@@ -393,4 +405,24 @@ graph = builder.compile()
 
 # graph.get_graph().draw_mermaid_png(output_file_path="diagram.png")
 
-# graph.invoke(initial_state, {"recursion_limit": 100})
+keyboard_input = input("Enter your prompt / message here:\n")
+
+initial_state = {
+    "database_info": db_info,
+    "type": "",
+    "answer": "",
+    "status": "",
+    "correct": False,
+    "suggested_new_query": "",
+    "all_fields_present": True,
+    "missing_fields": "",
+    "prompt": keyboard_input,
+    "success_answer": "",
+    "sql_answer": "",
+    "insert_status": "",
+    "conversation_flag": False,
+    "user_messages": [],
+    "ai_messages": [],
+}
+
+graph.invoke(initial_state, {"recursion_limit": 100})
