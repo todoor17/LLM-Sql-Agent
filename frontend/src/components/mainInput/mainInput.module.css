@@ -1,0 +1,42 @@
+.inputContainer {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  width: 700px;
+  height: auto;
+  background-color: white;
+  box-shadow: 5px 5px 5px black;
+  border-radius: 20px;
+}
+
+.input {
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif Arial, Helvetica,
+    sans-serif;
+  width: 700px;
+  outline: none;
+  border: 0;
+  margin: 0;
+  resize: none;
+  font-size: 16px;
+  padding: 20px 20px 0px 20px;
+  text-align: justify;
+  border-radius: 20px;
+  box-sizing: border-box;
+  overflow-y: hidden;
+}
+
+.input.paddingBottom {
+  padding-bottom: 20px;
+}
+
+.buttonsContainer {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  width: 146px;
+  height: 41px;
+  gap: 12px;
+  padding: 10px;
+}

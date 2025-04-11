@@ -1,0 +1,15 @@
+.sidebarContainer {
+  background-color: black;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  width: 7vw;
+  margin: 0;
+  padding: 0;
+}
+
+.image {
+  width: 60%;
+  height: auto;
+}

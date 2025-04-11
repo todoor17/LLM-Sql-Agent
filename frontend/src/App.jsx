@@ -1,10 +1,9 @@
 import style from "./app.module.css";
-import MediaRecorder from "./components/mediaRecorder/MediaRecorder.jsx";
-
+import MainPage from "./pages/mainPage/MainPage.jsx";
 export default function App() {
   return (
     <div>
-      <MediaRecorder />
+      <MainPage />
     </div>
   );
 }

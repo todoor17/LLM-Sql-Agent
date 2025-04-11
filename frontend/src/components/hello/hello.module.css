@@ -1,0 +1,44 @@
+.componentContainer {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  width: auto;
+  height: 20%;
+  gap: 0px;
+}
+
+.firstRowContainer {
+  display: flex;
+  flex-direction: row;
+  justify-content: center;
+  align-items: center;
+  font-size: 16px;
+  height: 60px;
+  margin: 0;
+  padding: 0;
+}
+
+.text1 {
+  font-size: 30px;
+  font-weight: bolder;
+  color: white;
+}
+
+.icon {
+  height: 60px;
+  width: auto;
+}
+
+.text2 {
+  margin: 0;
+  padding: 0;
+  height: 20px;
+  font-size: 20px;
+  color: white;
+}
+
+.image {
+  height: 220px;
+  width: auto;
+}
