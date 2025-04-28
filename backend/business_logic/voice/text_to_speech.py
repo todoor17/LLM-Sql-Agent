@@ -8,11 +8,14 @@ def clear_dir(dir_path):
         os.remove(item_path)
 
 
-def text_to_speech(text):
-    clear_dir("D:/PythonProjects/SQL_Agent/frontend/public/audio")
+def text_to_speech(text, current_time):
+    print("here")
+    clear_dir(r"D:\Projects\PythonProjects\QueryMate\frontend\public\audio")
 
     tts = gTTS(text=text, lang='en')
-    path = "D:/PythonProjects/SQL_Agent/frontend/public/audio/response.wav"
+    path = f"D:/Projects/PythonProjects/QueryMate/frontend/public/audio/response{current_time}.mp3"
     tts.save(path)
 
-    return path
+    return_path = f"/audio/response{current_time}.mp3"
+    return return_path
+

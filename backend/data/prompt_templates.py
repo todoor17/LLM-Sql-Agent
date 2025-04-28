@@ -1,127 +1,97 @@
 template_prompt = """
-Analyze the following user prompt and database structure to determine the appropriate operation type:
+CLASSIFICATION SYSTEM PROMPT
 
-USER PROMPT: '{initial_prompt}'
-DATABASE STRUCTURE: {db_info}
-LAST AI RESPONSE: {last_ai_response}
+Input Context:
+- User Query: "{prompt}"
+- Database Structure: {db_info}
+- Previous AI Response: {ai_response} (Only consider if needed for context)
 
-INSTRUCTIONS:
-1. Context Analysis:
-   - First check if this is a follow-up to the last AI response
-   - Then determine if the prompt is a general knowledge question or conversation
-   - If not conversation and not in English, translate it to English
-   - Perform all subsequent analysis on the processed version
+Classification Rules (Follow Strictly):
 
-2. Operation Classification:
-   Strictly respond with ONLY ONE of the following:
+1. CONVERSATION Priority Cases:
+   a) Greetings/pleasantries ("hi", "how are you?")
+   b) General knowledge questions (history, science, math)
+   c) Follow-ups to previous non-database responses
+   d) Inquiries about database schema or structure (e.g., "What is the table for users?")
+   e) No database elements referenced
+   f) Subjective/opinion requests ("what do you think?", "give me advice")
 
-   *CONVERSATION* if:
-   - The prompt is a direct follow-up to {last_ai_response}
-   - It's a general knowledge question (math, facts, etc.)
-   - It's conversational (greetings, opinions, etc.)
-   - No database tables are referenced
-   - It references previous non-DB context
-   (Examples: "What's 3+3?", "Hello", "How are you?", "About what you just said...")
+2. DATABASE Operation Only If ALL:
+   a) Explicit mention of database entities from database: user / product / order. It is not a database question if none of these (or equivalent words) are mentioned.
+   b) Action matches CRUD operation keywords (RETRIEVE, INSERT, UPDATE, DELETE).
+   c) Referenced tables/columns that exist in the database structure.
+   d) Query is explicitly related to performing an operation on the data (e.g., retrieval, addition, update, or removal).
+   
+   CRUD Mapping (Action Verbs):
+   - RETRIEVE: get, show, find, fetch, list, search
+   - INSERT: create, add, insert, register, new
+   - UPDATE: modify, edit, change, update
+   - DELETE: remove, erase, delete, purge
 
-   *INSERT*/*RETRIEVE*/*UPDATE*/*DELETE* only if:
-   - The prompt explicitly references NEW database operations
-   - Required tables exist in {db_info}
-   - Not building on previous non-DB conversation
-   (Follow original keyword rules for these)
+Decision Flow:
+1. FIRST check if matches CONVERSATION criteria (1a-1f).
+2. ONLY if NOT conversation: Check database relevance:
+   - Verify exact table/column names exist
+   - Verify that the query matches an actionable database operation
+   
+Output Requirements:
+- ONE WORD ONLY: CONVERSATION | RETRIEVE | INSERT | UPDATE | DELETE. Just the word, the answer must contain of of these words and nothing else.
+If it is not db related, then it's CONVERSATION.
 
-   *ERROR* only if:
-   - Prompt attempts database operations but tables don't exist
-   - Contains harmful/unsupported requests
+Critical Examples:
+1. "Moon landing date?" → CONVERSATION (general knowledge)
+2. "Users with >100 orders" → RETRIEVE (if 'users' and 'orders' tables exist)
+3. "Create newsletter subscriber" → INSERT (if 'subscriber' table exists)
+4. "Delete products" → DELETE (if 'products' table exists) else ERROR
+5. "What is the table for users?" → CONVERSATION (schema-related inquiry)
+6. "Calculate 15% tip" → CONVERSATION (math)
 
-3. Special Cases:
-   - Follow-ups to non-DB responses → *CONVERSATION*
-   - Math operations without DB context → *CONVERSATION* 
-   - References to previous answers → *CONVERSATION*
-   - Mixed prompts (DB + general) → Prefer *CONVERSATION*
-
-4. Output Rules:
-   - ONLY respond with the tag, no explanations
-   - Valid tags: *INSERT*, *RETRIEVE*, *UPDATE*, *DELETE*, *CONVERSATION*, *ERROR*
-
-Examples:
-Last AI: "3+3 equals 6"
-Input: "Now divide by 2" → *CONVERSATION*
-
-Last AI: "Users table contains 5 records" 
-Input: "Show me those users" → *RETRIEVE*
-
-Last AI: "Hello there!"
-Input: "How are you?" → *CONVERSATION*
-
-Input: "Delete customers" → *DELETE* (if table exists) or *ERROR*
 """
 
 template_prompt_1 = """
-# PostgreSQL Query Generation Prompt
-
-"I need a PostgreSQL query that fulfills this request: {initial_prompt}
-
-It is possible this to be a generation retry. If so, here is a suggested_new_query: {suggested_new_query}. Take it into consideration. If no, skip it.
-
-## Database Context
-Database structure can be found here: {db_info}
+## Context
+You are PostgreSQL query generator and you have to answer user's prompt. This prompt is related to a database that can be found below.
+You can find the prompt here: "{initial_prompt}".
+Database structure can be found here: "{db_info}".
+It is possible this to be a generation retry. If so, here is a suggested_new_query: {suggested_fix}. Build the new query based on that.
 
 ## Goal
 - Create a valid PostgreSQL query matching the user's request
-- Use only the specified tables/columns with proper joins
-- Validate all foreign key relationships
-- Return ONLY the raw SQL query (no explanations)
+- Where necessary, do correct joins. You can find the relationships below.
+- each order (orders) belongs to one user (users), linked by user_id (many-to-one)\
+- each order (orders) contains multiple entries in orders_content (one-to-many)\
+- each orders_content entry links to one product (products) by product_id (many-to-one)\
+
+## IMPORTANT
+- ACTION VERBS ALONE ARE NOT ENOUGH to classify as database operation.
+- IF prompt does NOT mention an exact table/entity from database, classify as CONVERSATION, even if the prompt contains words like add/delete/update.
+- Context continuation (e.g., "now add 10") without clear table/entity = always CONVERSATION.
 
 ## Return Format
-A single PostgreSQL query in plain text format
-
-## Warnings
-- Reject any tables/columns not in the provided schema
-- Ensure proper joins using the documented relationships
-- Validate date constraints
-- Check age non-negativity requirements
-- Handle decimal precision for price calculations
-
-## Context Dump
-User seeks data about: {initial_prompt}
-Special considerations: 
-- Age must be non-negative
-- Price calculations need proper decimal handling
+A single PostgreSQL query in plain text format. No markdowns, no explanations, no other text. Just the query.
 """
 
 template_prompt_2 = """
-# Query Validation Prompt
-
-"I need to verify if this PostgreSQL query: {answer}
-accurately solves: {initial_prompt}. Modify it only if the answer would be wrong. If it s a small mistake that doesn't affect the result, skip it.
-
-## Database Context
-Database structure can be found here: {db_info}
+## Context
+You are a PostgreSQL SELECT query validator. 
+Here is the user’s question: "{initial_prompt}".
+Here is the database schema: {db_info}
+Here is the query generated by an LLM: "{answer}".
 
 ## Goal
-- Confirm query matches all user requirements
-- Identify schema mismatches or logic errors
-- Validate all joins and constraints
-- Check for proper date filtering 
+Determine if the query accurately answers the user's question based on logic and intent, not just exact structure. Answer *no* just if the logic is wrong. 
+If it s a small modification that could be made but the query works, provide *yes*.
+
+- If the query returns the correct result, even with minor inefficiencies or stylistic issues, answer **"yes"** on the first line.
+- If the query does *not* return the correct result (e.g., wrong filters, wrong columns, wrong logic), answer **"no"** on the first line, and from the second line onward provide the corrected query.
+
+Only mark the query as **"no"** if it would return incorrect or misleading data.
 
 ## Return Format
-First line: 'yes' or 'no' 
-Second line: Error explanation (if 'no') + fix suggestion
-Modify it only if the answer would be wrong. If it s a small mistake that doesn't affect the result, skip it.
-
-## Warnings
-- Flag incorrect table/column references
-- Catch invalid joins missing relationship paths
-- Verify date constraints 
-- Check age non-negativity enforcement
-- Validate decimal handling for price calculations
-
-## Context Dump
-Query purpose: {initial_prompt}
-Critical constraints:
-- User ages cannot be negative
-- Price calculations require precision
+First line: 'yes' or 'no'  
+Second line and below (if applicable): the correct PostgreSQL query.
 """
+
 
 template_prompt_3 = """
 User's prompt: {initial_prompt}

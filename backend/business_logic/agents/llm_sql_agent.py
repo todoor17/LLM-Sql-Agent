@@ -1,17 +1,16 @@
 from queue import Queue
 
-from business_logic.models import llm_models
 from typing import Dict, List
 from typing_extensions import TypedDict
 from langgraph.constants import START, END
 from langgraph.graph import StateGraph
 from data.db_data import db_info
-from business_logic.models.llm_models import askMistral, model
+from data.db_data_short import db_summary
+from business_logic.models.llm_models import askMistral, deepseek, askDeepseek
 from business_logic.database.db_connector import do_db_retrieve, do_db_insert, do_db_delete, do_db_update
 from data.prompt_templates import template_prompt, template_prompt_1, template_prompt_2, template_prompt_4, template_prompt_5
 from data.prompt_templates import template_check_correct_update, template_check_correct_delete, template_prompt_chat, template_prompt_natural_language_response
 
-llm_model = llm_models.model
 
 class State(TypedDict):
     prompt: str
@@ -20,12 +19,12 @@ class State(TypedDict):
     answer: str
     status: str
     correct: bool
-    suggested_new_query: str
+    suggested_fix: str
     sql_answer: str
     insert_status: str
     all_fields_present: bool
     missing_fields: str
-    success_answer: str
+    natural_language_answer: str
     conversation_flag: bool
     user_messages: List[str]
     ai_messages: List[str]
@@ -66,23 +65,26 @@ def get_query(state: State):
 
 
 def check_query_type(state: State):
-    prompt = template_prompt.format(initial_prompt=state['prompt'], db_info=db_info, last_ai_response=state['ai_messages'][:-1])
-    llm_response = askMistral(prompt).upper()
-    # print(llm_response)
+    prompt = template_prompt.format(prompt=state['prompt'], db_info=db_summary, ai_response=state['ai_messages'][:-1])
+    # llm_response = askMistral(prompt).upper()
+    print("here " + prompt)
+    # llm_response = deepseek.invoke(prompt).content.upper()
+    llm_response = askDeepseek(prompt).upper()
 
-    if "INSERT" in llm_response:
-        state["type"] = "INSERT"
-    elif "RETRIEVE" in llm_response:
+    if "RETRIEVE" in llm_response:
         state["type"] = "RETRIEVE"
     elif "DELETE" in llm_response:
         state["type"] = "DELETE"
     elif "UPDATE" in llm_response:
         state["type"] = "UPDATE"
+    elif "INSERT" in llm_response:
+        state["type"] = "INSERT"
     elif "CONVERSATION" in llm_response:
         state["type"] = "CONVERSATION"
     else:
         state["type"] = "ERROR"
 
+    print(state["type"])
     return state
 
 
@@ -108,8 +110,9 @@ def do_type_route(state: State):
 
 
 def do_retrieve(state: State):
-    retrieve_prompt = template_prompt_1.format(initial_prompt=state['prompt'], db_info=db_info, suggested_new_query=state['suggested_new_query'])
+    retrieve_prompt = template_prompt_1.format(initial_prompt=state['prompt'], db_info=db_info, suggested_fix=state['suggested_fix'])
     llm_result = askMistral(retrieve_prompt)
+    # llm_result = deepseek.inkoke(retrieve_prompt).content
     print(llm_result)
     print("\n")
 
@@ -142,8 +145,9 @@ def check_correct_retrieve(state: State):
         state["correct"] = True
     elif "no" in check_response or "No" in check_response or "NO" in check_response:
         state["correct"] = False
-        suggested_fix = "\n".join(state["suggested_new_query"].split("\n")[1:])
-        state["suggested_new_query"] = suggested_fix
+        suggested_fix = "\n".join(line for line in check_response.split("\n")[1:] if line.strip() != "")
+        state["suggested_fix"] = suggested_fix
+        print("Suggested fix: " + suggested_fix)
 
     return state
 
@@ -280,6 +284,7 @@ def print_result(state: State):
     result = askMistral(print_prompt)
 
     print(result)
+    state["natural_language_answer"] = result
 
     # choice is used when user runs llm_sql_agent with text, not with voice (from frontend)
     # choice = input("\nEnter 0 to exit the program\nEnter 1 to introduce another prompt\n\n")
@@ -350,7 +355,7 @@ builder.add_conditional_edges("check_query_type", do_type_route, {
     "ERROR": "get_query"
 })
 
-builder.add_edge("conversation", "get_query")
+builder.add_edge("conversation", END)
 
 builder.add_conditional_edges("check_for_all_fields", check_for_all_fields_route, {
     "True": "do_insert",
@@ -366,6 +371,11 @@ builder.add_conditional_edges("do_retrieve", do_retrieve_route, {
     "ERROR": "do_retrieve",
     "SUCCESS": "check_correct_retrieve"
 })
+
+# builder.add_conditional_edges("do_retrieve", do_retrieve_route, {
+#     "ERROR": "do_retrieve",
+#     "SUCCESS": "print_result"
+# })
 
 builder.add_conditional_edges("check_correct_retrieve", check_retrieve_correctness_route, {
     "CORRECT": "print_result",
@@ -413,7 +423,7 @@ initial_state = {
     "answer": "",
     "status": "",
     "correct": False,
-    "suggested_new_query": "",
+    "suggested_fix": "",
     "all_fields_present": True,
     "missing_fields": "",
     "prompt": keyboard_input,
